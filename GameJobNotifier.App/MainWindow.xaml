@@ -1,0 +1,65 @@
+<Window x:Class="GameJobNotifier.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:containers="clr-namespace:GameJobNotifier.App.Views.Containers"
+        mc:Ignorable="d"
+        Title="GameJobNotifier"
+        Width="860"
+        Height="700"
+        MinWidth="760"
+        MinHeight="620"
+        Icon="Assets/gamejob.ico"
+        Background="#0A0F1A"
+        Foreground="#E2EAF4">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- 설정 + 필터 패널 -->
+        <Border Grid.Row="0"
+                Padding="14,12"
+                CornerRadius="8"
+                BorderThickness="1"
+                BorderBrush="{StaticResource BorderBrushDark}"
+                Background="{StaticResource SurfaceBrush}">
+            <StackPanel>
+                <containers:SettingsHeaderContainer />
+                <Border Margin="0,10,0,0"
+                        Padding="10,8"
+                        CornerRadius="6"
+                        BorderThickness="1"
+                        BorderBrush="{StaticResource BorderBrushDark}"
+                        Background="#0A0F1A">
+                    <containers:FilterTabsContainer />
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- 상태 바 -->
+        <Border Grid.Row="1"
+                Margin="0,8,0,0"
+                Padding="14,8"
+                CornerRadius="8"
+                BorderThickness="1"
+                BorderBrush="{StaticResource BorderBrushDark}"
+                Background="{StaticResource SurfaceBrush}">
+            <containers:StatusContainer />
+        </Border>
+
+        <!-- 활동 로그 -->
+        <Border Grid.Row="2"
+                Margin="0,8,0,0"
+                Padding="14,12"
+                CornerRadius="8"
+                BorderThickness="1"
+                BorderBrush="{StaticResource BorderBrushDark}"
+                Background="{StaticResource SurfaceBrush}">
+            <containers:ActivityLogContainer />
+        </Border>
+    </Grid>
+</Window>

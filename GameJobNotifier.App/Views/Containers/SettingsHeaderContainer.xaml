@@ -1,0 +1,46 @@
+<UserControl x:Class="GameJobNotifier.App.Views.Containers.SettingsHeaderContainer"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d">
+    <StackPanel>
+        <!-- 검사 주기 + 체크박스 한 줄 -->
+        <StackPanel Orientation="Horizontal"
+                    Margin="0,0,0,10">
+            <TextBlock VerticalAlignment="Center"
+                       Foreground="{StaticResource TextBrushSecondary}"
+                       Text="검사 주기 (분)" />
+            <TextBox Width="60"
+                     Margin="8,0,24,0"
+                     VerticalAlignment="Center"
+                     Text="{Binding CheckIntervalMinutes, UpdateSourceTrigger=PropertyChanged}" />
+            <CheckBox Content="Toast 알림"
+                      Margin="0,0,16,0"
+                      VerticalAlignment="Center"
+                      IsChecked="{Binding EnableToastNotification}" />
+            <CheckBox Content="트레이 풍선 알림"
+                      Margin="0,0,16,0"
+                      VerticalAlignment="Center"
+                      IsChecked="{Binding EnableTrayBalloon}" />
+            <CheckBox Content="시작 시 백그라운드"
+                      VerticalAlignment="Center"
+                      IsChecked="{Binding StartInBackground}" />
+        </StackPanel>
+
+        <!-- 버튼 행 -->
+        <StackPanel Orientation="Horizontal">
+            <Button Width="110"
+                    Margin="0,0,8,0"
+                    Command="{Binding SaveSettingsCommand}"
+                    Content="설정 저장" />
+            <Button Width="110"
+                    Margin="0,0,8,0"
+                    Command="{Binding RunNowCommand}"
+                    Content="지금 검사" />
+            <Button Width="130"
+                    Command="{Binding OpenDataFolderCommand}"
+                    Content="데이터 폴더 열기" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

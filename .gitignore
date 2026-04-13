@@ -1,0 +1,11 @@
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.pdb
+*.log
+.vs/
+*.db
+*.sqlite
+*.sqlite3
