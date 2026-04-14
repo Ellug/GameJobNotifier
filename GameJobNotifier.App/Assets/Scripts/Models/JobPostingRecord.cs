@@ -26,9 +26,7 @@ public sealed record JobPostingRecord
 
     public string DeadlineText { get; init; } = string.Empty;
 
-    public string ModifiedText { get; init; } = string.Empty;
-
-    public required string ModifiedKey { get; init; }
+    public string RegisteredText { get; init; } = string.Empty;
 
     public bool IsHidden { get; init; }
 
@@ -53,8 +51,7 @@ public sealed record JobPostingRecord
             GameCategoryText = GameCategoryText,
             EmploymentTypeText = EmploymentTypeText,
             DeadlineText = DeadlineText,
-            ModifiedText = ModifiedText,
-            ModifiedKey = ModifiedKey
+            RegisteredText = RegisteredText
         };
     }
 }

@@ -10,7 +10,7 @@
         Height="700"
         MinWidth="760"
         MinHeight="620"
-        Icon="Assets/gamejob.ico"
+        Icon="/Assets/gamejob.ico"
         Background="#0A0F1A"
         Foreground="#E2EAF4">
     <Grid Margin="14">

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using GameJobNotifier.App.Models;
 using GameJobNotifier.App.Services.Interfaces;
@@ -40,6 +41,7 @@ public sealed class JobSyncService(
         try
         {
             var settings = (await _settingsService.GetAsync(cancellationToken)).Sanitize();
+            var sourceScopeKey = BuildSourceScopeKey(settings);
             var runtimeState = await _runtimeStateService.GetAsync(cancellationToken);
             var previousSuccessfulCheckUtc = runtimeState.LastSuccessfulCheckUtc;
             var syncReferenceNowUtc = _timeProvider.GetUtcNow();
@@ -56,7 +58,6 @@ public sealed class JobSyncService(
             var matchedPostings = collection.Postings
                 .Where(posting => JobFilter.MatchesPrimaryCriteria(posting, criteria))
                 .DistinctBy(posting => posting.JobId)
-                .Select(AssignModifiedKey)
                 .ToList();
 
             var now = _timeProvider.GetUtcNow();
@@ -71,23 +72,24 @@ public sealed class JobSyncService(
             {
                 if (!existingById.TryGetValue(posting.JobId, out var existing))
                 {
-                    upserts.Add(CreateRecord(settings.TargetUrl, posting, now));
+                    upserts.Add(CreateRecord(sourceScopeKey, posting, now));
                     changes.Add(new JobChange(JobChangeType.Added, posting));
                     continue;
                 }
 
-                var updatedRecord = CreateRecord(settings.TargetUrl, posting, now, existing.FirstSeenUtc);
+                var updatedRecord = CreateRecord(sourceScopeKey, posting, now, existing.FirstSeenUtc);
                 upserts.Add(updatedRecord);
+
+                var isSameScopeRecord = string.Equals(existing.SourceUrl, sourceScopeKey, StringComparison.Ordinal);
+                if (!isSameScopeRecord)
+                {
+                    // Ignore change signals when the record comes from a different filter scope.
+                    continue;
+                }
 
                 if (existing.IsHidden)
                 {
                     changes.Add(new JobChange(JobChangeType.Restored, posting));
-                    continue;
-                }
-
-                if (!string.Equals(existing.ModifiedKey, posting.ModifiedKey, StringComparison.Ordinal))
-                {
-                    changes.Add(new JobChange(JobChangeType.Updated, posting));
                 }
             }
 
@@ -97,13 +99,13 @@ public sealed class JobSyncService(
             }
 
             var currentIds = matchedPostings.Select(posting => posting.JobId).ToHashSet(StringComparer.Ordinal);
-            var visibleIds = await _repository.GetVisibleJobIdsAsync(settings.TargetUrl, cancellationToken);
+            var visibleIds = await _repository.GetVisibleJobIdsAsync(sourceScopeKey, cancellationToken);
             var missingIds = visibleIds.Where(id => !currentIds.Contains(id)).ToArray();
 
             if (missingIds.Length > 0)
             {
                 var hiddenRecords = await _repository.GetByIdsAsync(missingIds, cancellationToken);
-                await _repository.MarkHiddenAsync(settings.TargetUrl, missingIds, now, cancellationToken);
+                await _repository.MarkHiddenAsync(sourceScopeKey, missingIds, now, cancellationToken);
 
                 foreach (var hiddenId in missingIds)
                 {
@@ -116,14 +118,31 @@ public sealed class JobSyncService(
 
             if (settings.EnableToastNotification || settings.EnableTrayBalloon)
             {
-                foreach (var newPosting in changes.Where(change => change.ChangeType == JobChangeType.Added))
+                foreach (var change in changes)
                 {
-                    if (!ShouldNotifyForPeriod(newPosting.Posting, previousSuccessfulCheckUtc, syncReferenceNowUtc))
+                    string? notificationTitle = change.ChangeType switch
+                    {
+                        JobChangeType.Added => "신규 공고",
+                        JobChangeType.Restored => "복원 공고",
+                        _ => null
+                    };
+
+                    if (notificationTitle is null)
                     {
                         continue;
                     }
 
-                    await _notificationService.NotifyNewPostingAsync(newPosting.Posting, settings, cancellationToken);
+                    if (change.ChangeType == JobChangeType.Added &&
+                        !ShouldNotifyForPeriod(change.Posting, previousSuccessfulCheckUtc, syncReferenceNowUtc))
+                    {
+                        continue;
+                    }
+
+                    await _notificationService.NotifyPostingAsync(
+                        change.Posting,
+                        settings,
+                        notificationTitle,
+                        cancellationToken);
                 }
             }
 
@@ -153,11 +172,10 @@ public sealed class JobSyncService(
 
             _syncEventHub.Publish(result);
             _logger.LogInformation(
-                "Sync finished. fetched={Fetched}, matched={Matched}, new={NewCount}, updated={UpdatedCount}, hidden={HiddenCount}, restored={RestoredCount}",
+                "Sync finished. fetched={Fetched}, matched={Matched}, new={NewCount}, hidden={HiddenCount}, restored={RestoredCount}",
                 result.FetchedCount,
                 result.MatchedCount,
                 result.NewCount,
-                result.UpdatedCount,
                 result.HiddenCount,
                 result.RestoredCount);
 
@@ -197,24 +215,6 @@ public sealed class JobSyncService(
         }
     }
 
-    private static JobPosting AssignModifiedKey(JobPosting posting)
-    {
-        var source = string.Join("|",
-            posting.JobId,
-            posting.Title,
-            posting.Company,
-            posting.DutyText,
-            posting.CareerText,
-            posting.LocationText,
-            posting.GameCategoryText,
-            posting.EmploymentTypeText,
-            posting.DeadlineText,
-            posting.ModifiedText);
-
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(source));
-        return posting with { ModifiedKey = Convert.ToHexString(hash) };
-    }
-
     private static JobPostingRecord CreateRecord(
         string sourceUrl,
         JobPosting posting,
@@ -235,8 +235,7 @@ public sealed class JobSyncService(
             GameCategoryText = posting.GameCategoryText,
             EmploymentTypeText = posting.EmploymentTypeText,
             DeadlineText = posting.DeadlineText,
-            ModifiedText = posting.ModifiedText,
-            ModifiedKey = posting.ModifiedKey,
+            RegisteredText = posting.RegisteredText,
             IsHidden = false,
             FirstSeenUtc = firstSeenUtc ?? now,
             LastSeenUtc = now,
@@ -255,9 +254,9 @@ public sealed class JobSyncService(
             return false;
         }
 
-        if (!TryResolveRegisteredAtUtc(posting.ModifiedText, nowUtc, out var registeredAtUtc))
+        if (!TryResolveRegisteredAtUtc(posting.RegisteredText, nowUtc, out var registeredAtUtc))
         {
-            // If the registration text is not parseable, fallback to added-change signal.
+            // If registration text is not parseable, rely on added-change signal.
             return true;
         }
 
@@ -335,5 +334,19 @@ public sealed class JobSyncService(
 
         result = convert(value);
         return true;
+    }
+
+    private static string BuildSourceScopeKey(AppSettings settings)
+    {
+        var payload = string.Join("|",
+            settings.TargetUrl,
+            string.Join(",", settings.SelectedDutyCodes.Select(code => code.ToString(CultureInfo.InvariantCulture))),
+            string.Join(",", settings.SelectedRegions),
+            string.Join(",", settings.SelectedGameFields),
+            string.Join(",", settings.SelectedWorkConditions),
+            string.Join(",", settings.SelectedQualifications));
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
+        return $"scope:{Convert.ToHexString(hash)}";
     }
 }

@@ -71,7 +71,7 @@ public sealed partial class GameJobHtmlParser : IGameJobHtmlParser
                 GameCategoryText = string.IsNullOrWhiteSpace(gameCategory) ? gameFromOnclick : gameCategory,
                 EmploymentTypeText = employmentType,
                 DeadlineText = deadline,
-                ModifiedText = modified
+                RegisteredText = modified
             });
         }
 

@@ -10,9 +10,7 @@ public partial class DutyCategoryOptionState(DutyCategoryOption option) : Observ
 
     public string Name { get; } = option.Name;
 
-    public int PostingCount { get; } = option.PostingCount;
-
-    public string DisplayName => PostingCount > 0 ? $"{Name} ({PostingCount})" : Name;
+    public string DisplayName => Name;
 
     [ObservableProperty]
     private bool _isSelected;

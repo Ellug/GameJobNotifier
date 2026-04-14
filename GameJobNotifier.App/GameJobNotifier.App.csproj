@@ -15,6 +15,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Page Remove="Assets\Scripts\App.xaml" />
+    <ApplicationDefinition Include="Assets\Scripts\App.xaml" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.5" />

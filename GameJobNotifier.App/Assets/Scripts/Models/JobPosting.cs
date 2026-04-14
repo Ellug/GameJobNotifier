@@ -24,7 +24,5 @@ public sealed record JobPosting
 
     public string DeadlineText { get; init; } = string.Empty;
 
-    public string ModifiedText { get; init; } = string.Empty;
-
-    public string ModifiedKey { get; init; } = string.Empty;
+    public string RegisteredText { get; init; } = string.Empty;
 }

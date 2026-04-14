@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
 using GameJobNotifier.App.Services.Interfaces;
@@ -9,6 +10,7 @@ public sealed class TrayIconService : ITrayIconService
     private NotifyIcon? _notifyIcon;
     private ContextMenuStrip? _menu;
     private Icon? _trayIcon;
+    private string? _pendingBalloonUrl;
 
     public event Action? OpenRequested;
     public event Action? CheckRequested;
@@ -36,11 +38,13 @@ public sealed class TrayIconService : ITrayIconService
             ContextMenuStrip = _menu
         };
 
-        _notifyIcon.DoubleClick += (_, _) => OpenRequested?.Invoke();
+        _notifyIcon.DoubleClick += OnNotifyIconDoubleClick;
+        _notifyIcon.BalloonTipClicked += OnBalloonTipClicked;
     }
 
-    public void ShowBalloon(string title, string message)
+    public void ShowBalloon(string title, string message, string? clickUrl = null)
     {
+        _pendingBalloonUrl = NormalizeHttpUrl(clickUrl);
         _notifyIcon?.ShowBalloonTip(5000, title, message, ToolTipIcon.Info);
     }
 
@@ -48,11 +52,14 @@ public sealed class TrayIconService : ITrayIconService
     {
         if (_notifyIcon is not null)
         {
+            _notifyIcon.DoubleClick -= OnNotifyIconDoubleClick;
+            _notifyIcon.BalloonTipClicked -= OnBalloonTipClicked;
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
             _notifyIcon = null;
         }
 
+        _pendingBalloonUrl = null;
         _trayIcon?.Dispose();
         _trayIcon = null;
 
@@ -80,5 +87,49 @@ public sealed class TrayIconService : ITrayIconService
         }
 
         return (Icon)SystemIcons.Information.Clone();
+    }
+
+    private void OnNotifyIconDoubleClick(object? sender, EventArgs e)
+    {
+        OpenRequested?.Invoke();
+    }
+
+    private void OnBalloonTipClicked(object? sender, EventArgs e)
+    {
+        var url = _pendingBalloonUrl;
+        _pendingBalloonUrl = null;
+
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Ignore URL launch failures.
+        }
+    }
+
+    private static string? NormalizeHttpUrl(string? rawUrl)
+    {
+        if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+        {
+            return null;
+        }
+
+        return uri.AbsoluteUri;
     }
 }

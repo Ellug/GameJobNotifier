@@ -20,8 +20,6 @@ public sealed record SyncResult
 
     public int NewCount => Changes.Count(change => change.ChangeType == JobChangeType.Added);
 
-    public int UpdatedCount => Changes.Count(change => change.ChangeType == JobChangeType.Updated);
-
     public int HiddenCount => Changes.Count(change => change.ChangeType == JobChangeType.Hidden);
 
     public int RestoredCount => Changes.Count(change => change.ChangeType == JobChangeType.Restored);

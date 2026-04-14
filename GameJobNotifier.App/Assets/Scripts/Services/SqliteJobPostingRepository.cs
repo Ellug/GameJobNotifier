@@ -7,6 +7,8 @@ namespace GameJobNotifier.App.Services;
 
 public sealed class SqliteJobPostingRepository : IJobPostingRepository
 {
+    private const int MaxIdsPerBatch = 500;
+
     private readonly SemaphoreSlim _initGate = new(1, 1);
     private bool _initialized;
 
@@ -78,36 +80,49 @@ public sealed class SqliteJobPostingRepository : IJobPostingRepository
             return new Dictionary<string, JobPostingRecord>(StringComparer.Ordinal);
         }
 
+        var normalizedIds = jobIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (normalizedIds.Length == 0)
+        {
+            return new Dictionary<string, JobPostingRecord>(StringComparer.Ordinal);
+        }
+
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
-        var parameterNames = new List<string>(jobIds.Count);
-        await using var command = connection.CreateCommand();
-
-        var index = 0;
-        foreach (var jobId in jobIds)
-        {
-            var parameterName = $"@p{index++}";
-            parameterNames.Add(parameterName);
-            command.Parameters.AddWithValue(parameterName, jobId);
-        }
-
-        command.CommandText = $"""
-            SELECT
-                job_id, source_url, detail_url, title, company, duty_text, career_text, education_text, location_text,
-                game_category_text, employment_type_text, deadline_text, modified_text, modified_key, is_hidden,
-                first_seen_utc, last_seen_utc, last_changed_utc
-            FROM job_postings
-            WHERE job_id IN ({string.Join(", ", parameterNames)})
-            """;
-
         var records = new Dictionary<string, JobPostingRecord>(StringComparer.Ordinal);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        for (var offset = 0; offset < normalizedIds.Length; offset += MaxIdsPerBatch)
         {
-            var record = ReadRecord(reader);
-            records[record.JobId] = record;
+            var batchSize = Math.Min(MaxIdsPerBatch, normalizedIds.Length - offset);
+
+            await using var command = connection.CreateCommand();
+            var parameterNames = new string[batchSize];
+
+            for (var index = 0; index < batchSize; index++)
+            {
+                var parameterName = $"@p{index}";
+                parameterNames[index] = parameterName;
+                command.Parameters.AddWithValue(parameterName, normalizedIds[offset + index]);
+            }
+
+            command.CommandText = $"""
+                SELECT
+                    job_id, source_url, detail_url, title, company, duty_text, career_text, education_text, location_text,
+                    game_category_text, employment_type_text, deadline_text, modified_text, modified_key, is_hidden,
+                    first_seen_utc, last_seen_utc, last_changed_utc
+                FROM job_postings
+                WHERE job_id IN ({string.Join(", ", parameterNames)})
+                """;
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var record = ReadRecord(reader);
+                records[record.JobId] = record;
+            }
         }
 
         return records;
@@ -204,8 +219,8 @@ public sealed class SqliteJobPostingRepository : IJobPostingRepository
             command.Parameters.AddWithValue("@game_category_text", record.GameCategoryText);
             command.Parameters.AddWithValue("@employment_type_text", record.EmploymentTypeText);
             command.Parameters.AddWithValue("@deadline_text", record.DeadlineText);
-            command.Parameters.AddWithValue("@modified_text", record.ModifiedText);
-            command.Parameters.AddWithValue("@modified_key", record.ModifiedKey);
+            command.Parameters.AddWithValue("@modified_text", record.RegisteredText);
+            command.Parameters.AddWithValue("@modified_key", string.Empty);
             command.Parameters.AddWithValue("@is_hidden", record.IsHidden ? 1 : 0);
             command.Parameters.AddWithValue("@first_seen_utc", record.FirstSeenUtc.ToString("O"));
             command.Parameters.AddWithValue("@last_seen_utc", record.LastSeenUtc.ToString("O"));
@@ -285,8 +300,7 @@ public sealed class SqliteJobPostingRepository : IJobPostingRepository
             GameCategoryText = reader.GetString(9),
             EmploymentTypeText = reader.GetString(10),
             DeadlineText = reader.GetString(11),
-            ModifiedText = reader.GetString(12),
-            ModifiedKey = reader.GetString(13),
+            RegisteredText = reader.GetString(12),
             IsHidden = reader.GetInt32(14) == 1,
             FirstSeenUtc = DateTimeOffset.Parse(reader.GetString(15)),
             LastSeenUtc = DateTimeOffset.Parse(reader.GetString(16)),

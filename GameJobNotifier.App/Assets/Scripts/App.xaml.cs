@@ -31,6 +31,13 @@ public partial class App : System.Windows.Application
         MainWindow = mainWindow;
 
         var settings = (await _host.Services.GetRequiredService<ISettingsService>().GetAsync()).Sanitize();
+        var startupService = _host.Services.GetRequiredService<IWindowsStartupService>();
+        if (!startupService.TryConfigure(settings.StartInBackground, out var startupError))
+        {
+            _host.Services.GetRequiredService<ILogger<App>>()
+                .LogWarning("Windows startup sync failed: {Error}", startupError);
+        }
+
         if (settings.StartInBackground)
         {
             tray.ShowBalloon("GameJobNotifier", "트레이에서 백그라운드 실행 중");
@@ -79,6 +86,7 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<IFilterCriteriaFactory, FilterCriteriaFactory>();
                 services.AddSingleton<ITrayIconService, TrayIconService>();
                 services.AddSingleton<INotificationService, NotificationService>();
+                services.AddSingleton<IWindowsStartupService, WindowsStartupService>();
                 services.AddSingleton<ISyncEventHub, SyncEventHub>();
                 services.AddSingleton<ICheckRequestQueue, CheckRequestQueue>();
                 services.AddSingleton<IJobSyncService, JobSyncService>();

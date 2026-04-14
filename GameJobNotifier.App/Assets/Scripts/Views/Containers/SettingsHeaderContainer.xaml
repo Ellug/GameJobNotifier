@@ -23,7 +23,7 @@
                       Margin="0,0,16,0"
                       VerticalAlignment="Center"
                       IsChecked="{Binding EnableTrayBalloon}" />
-            <CheckBox Content="시작 시 백그라운드"
+            <CheckBox Content="윈도우 시작 시 백그라운드"
                       VerticalAlignment="Center"
                       IsChecked="{Binding StartInBackground}" />
         </StackPanel>
@@ -38,6 +38,14 @@
                     Margin="0,0,8,0"
                     Command="{Binding RunNowCommand}"
                     Content="지금 검사" />
+            <Button Width="110"
+                    Margin="0,0,8,0"
+                    Command="{Binding TestNotificationCommand}"
+                    Content="알림 테스트" />
+            <Button Width="130"
+                    Margin="0,0,8,0"
+                    Command="{Binding OpenNotificationSettingsCommand}"
+                    Content="알림 설정 열기" />
             <Button Width="130"
                     Command="{Binding OpenDataFolderCommand}"
                     Content="데이터 폴더 열기" />

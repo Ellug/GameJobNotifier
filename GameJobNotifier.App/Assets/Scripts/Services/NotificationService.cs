@@ -14,33 +14,48 @@ public sealed class NotificationService(
     private readonly ITrayIconService _trayIconService = trayIconService;
     private readonly ILogger<NotificationService> _logger = logger;
 
-    public Task NotifyNewPostingAsync(
+    public Task NotifyPostingAsync(
         JobPosting posting,
         AppSettings settings,
+        string notificationTitle,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (settings.EnableToastNotification)
         {
-            TryShowToastViaPowerShell(posting);
+            TryShowToastViaPowerShell(posting, notificationTitle);
         }
 
         if (settings.EnableTrayBalloon)
         {
-            _trayIconService.ShowBalloon("신규 공고", $"{posting.Company} | {posting.Title}");
+            _trayIconService.ShowBalloon(
+                notificationTitle,
+                $"{posting.Company} | {posting.Title}",
+                posting.DetailUrl);
         }
 
         return Task.CompletedTask;
     }
 
-    private void TryShowToastViaPowerShell(JobPosting posting)
+    private void TryShowToastViaPowerShell(JobPosting posting, string notificationTitle)
     {
         try
         {
-            var title = EscapeXml("GameJobNotifier 신규 공고");
+            var title = EscapeXml($"GameJobNotifier {notificationTitle}");
             var line1 = EscapeXml(posting.Title);
             var line2 = EscapeXml($"{posting.Company} | {posting.CareerText} | {posting.LocationText}");
+            var openableUrl = NormalizeHttpUrl(posting.DetailUrl);
+            var actions = string.Empty;
+            if (openableUrl is not null)
+            {
+                var escapedUrl = EscapeXml(openableUrl);
+                actions = $$"""
+                  <actions>
+                    <action content="공고 열기" activationType="protocol" arguments="{{escapedUrl}}"/>
+                  </actions>
+                """;
+            }
 
             var script = $$"""
                 $ErrorActionPreference = 'Stop'
@@ -56,6 +71,7 @@ public sealed class NotificationService(
                       <text>{{line2}}</text>
                     </binding>
                   </visual>
+                {{actions}}
                   <audio silent="true"/>
                 </toast>
                 "@
@@ -85,5 +101,20 @@ public sealed class NotificationService(
     private static string EscapeXml(string value)
     {
         return SecurityElement.Escape(value) ?? string.Empty;
+    }
+
+    private static string? NormalizeHttpUrl(string? rawUrl)
+    {
+        if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+        {
+            return null;
+        }
+
+        return uri.AbsoluteUri;
     }
 }

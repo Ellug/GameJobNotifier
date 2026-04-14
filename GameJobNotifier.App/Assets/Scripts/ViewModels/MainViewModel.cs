@@ -16,6 +16,8 @@ public partial class MainViewModel : ObservableObject
     private readonly IRuntimeStateService _runtimeStateService;
     private readonly ICheckRequestQueue _checkRequestQueue;
     private readonly ISyncEventHub _syncEventHub;
+    private readonly INotificationService _notificationService;
+    private readonly IWindowsStartupService _windowsStartupService;
     private readonly ILogger<MainViewModel> _logger;
 
     [ObservableProperty]
@@ -60,12 +62,16 @@ public partial class MainViewModel : ObservableObject
         IRuntimeStateService runtimeStateService,
         ICheckRequestQueue checkRequestQueue,
         ISyncEventHub syncEventHub,
+        INotificationService notificationService,
+        IWindowsStartupService windowsStartupService,
         ILogger<MainViewModel> logger)
     {
         _settingsService = settingsService;
         _runtimeStateService = runtimeStateService;
         _checkRequestQueue = checkRequestQueue;
         _syncEventHub = syncEventHub;
+        _notificationService = notificationService;
+        _windowsStartupService = windowsStartupService;
         _logger = logger;
 
         _syncEventHub.SyncCompleted += HandleSyncCompleted;
@@ -103,6 +109,17 @@ public partial class MainViewModel : ObservableObject
             await _settingsService.SaveAsync(settings);
             ApplySettings(settings);
 
+            if (!_windowsStartupService.TryConfigure(settings.StartInBackground, out var startupError))
+            {
+                AppendLog($"Windows 시작프로그램 설정 실패 - {startupError}");
+            }
+            else
+            {
+                AppendLog(settings.StartInBackground
+                    ? "Windows 시작프로그램 등록됨 (부팅 시 백그라운드 시작)"
+                    : "Windows 시작프로그램 해제됨");
+            }
+
             StatusText = "설정 저장 완료";
             AppendLog(
                 $"설정을 저장했습니다. (직종 {settings.SelectedDutyCodes.Count}, 지역 {settings.SelectedRegions.Count}, 게임분야 {settings.SelectedGameFields.Count}, 근무조건 {settings.SelectedWorkConditions.Count}, 지원자격 {settings.SelectedQualifications.Count})");
@@ -139,6 +156,91 @@ public partial class MainViewModel : ObservableObject
             FileName = AppPaths.BaseDirectory,
             UseShellExecute = true
         });
+    }
+
+    [RelayCommand]
+    private void OpenNotificationSettings()
+    {
+        var opened = TryOpenUri("ms-settings:notifications") ||
+                     TryOpenUri("ms-settings:notifications-app");
+
+        if (opened)
+        {
+            StatusText = "Windows 알림 설정 열기";
+            AppendLog("Windows 알림 설정 화면을 열었습니다.");
+            return;
+        }
+
+        StatusText = "알림 설정 열기 실패";
+        AppendLog("Windows 알림 설정 화면 열기 실패");
+        System.Windows.MessageBox.Show(
+            "Windows 알림 설정 화면을 열지 못했습니다.\n설정 > 시스템 > 알림에서 GameJobNotifier 알림 허용을 확인해 주세요.",
+            "알림 설정",
+            System.Windows.MessageBoxButton.OK,
+            System.Windows.MessageBoxImage.Warning);
+    }
+
+    [RelayCommand]
+    private async Task TestNotificationAsync()
+    {
+        if (!EnableToastNotification && !EnableTrayBalloon)
+        {
+            StatusText = "알림 테스트 실패: Toast 또는 트레이 풍선 알림을 켜주세요.";
+            AppendLog("알림 테스트 실패 - 알림 옵션이 모두 꺼져 있음");
+            System.Windows.MessageBox.Show(
+                "알림 옵션이 모두 꺼져 있습니다.\n'Toast 알림' 또는 '트레이 풍선 알림'을 켜고 다시 테스트해 주세요.",
+                "알림 테스트",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        var testPosting = new JobPosting
+        {
+            JobId = $"TEST-{DateTime.Now:yyyyMMddHHmmss}",
+            DetailUrl = "https://www.gamejob.co.kr/",
+            Title = "[테스트] 알림 동작 확인",
+            Company = "GameJobNotifier",
+            CareerText = "신입/경력무관",
+            LocationText = "서울"
+        };
+
+        var settings = new AppSettings
+        {
+            CheckIntervalMinutes = CheckIntervalMinutes,
+            EnableToastNotification = EnableToastNotification,
+            EnableTrayBalloon = EnableTrayBalloon,
+            StartInBackground = StartInBackground,
+            SelectedDutyCodes = DutyFilter.GetSelectedCodes(),
+            SelectedRegions = RegionFilter.GetSelectedKeys(),
+            SelectedGameFields = GameFieldFilter.GetSelectedKeys(),
+            SelectedWorkConditions = WorkConditionFilter.GetSelectedKeys(),
+            SelectedQualifications = QualificationFilter.GetSelectedKeys()
+        }.Sanitize();
+
+        try
+        {
+            await _notificationService.NotifyPostingAsync(testPosting, settings, "신규 공고");
+            StatusText = "알림 테스트 전송 완료";
+            AppendLog($"알림 테스트 전송 완료 (Toast={settings.EnableToastNotification}, Tray={settings.EnableTrayBalloon})");
+            System.Windows.MessageBox.Show(
+                $"알림 테스트를 전송했습니다.\nToast={settings.EnableToastNotification}, Tray={settings.EnableTrayBalloon}\n\n" +
+                "화면에 표시되지 않으면 Windows 알림 설정(집중 지원/앱 알림 허용)을 확인해 주세요.",
+                "알림 테스트",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send test notification.");
+            StatusText = $"알림 테스트 실패: {ex.Message}";
+            AppendLog($"알림 테스트 실패 - {ex.Message}");
+            System.Windows.MessageBox.Show(
+                $"알림 테스트 중 오류가 발생했습니다.\n{ex.Message}",
+                "알림 테스트 실패",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Error);
+        }
     }
 
     [RelayCommand]
@@ -239,7 +341,7 @@ public partial class MainViewModel : ObservableObject
             StatusText =
                 $"완료 | 수집 {result.FetchedCount}건, 조건일치 {result.MatchedCount}건, 신규 {result.NewCount}건";
             AppendLog(
-                $"검사 완료 ({result.CollectorName}) - 신규 {result.NewCount}, 수정 {result.UpdatedCount}, 삭제 {result.HiddenCount}, 복원 {result.RestoredCount}");
+                $"검사 완료 ({result.CollectorName}) - 신규 {result.NewCount}, 삭제 {result.HiddenCount}, 복원 {result.RestoredCount}");
 
             AppendChangeDetails(result.Changes);
         }
@@ -267,7 +369,6 @@ public partial class MainViewModel : ObservableObject
             var label = change.ChangeType switch
             {
                 JobChangeType.Added => "신규",
-                JobChangeType.Updated => "수정",
                 JobChangeType.Hidden => "비노출",
                 JobChangeType.Restored => "복원",
                 _ => "변경"
@@ -296,6 +397,24 @@ public partial class MainViewModel : ObservableObject
         while (ActivityLogs.Count > maxLogCount)
         {
             ActivityLogs.RemoveAt(ActivityLogs.Count - 1);
+        }
+    }
+
+    private bool TryOpenUri(string uri)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = uri,
+                UseShellExecute = true
+            });
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to open URI: {Uri}", uri);
+            return false;
         }
     }
 }

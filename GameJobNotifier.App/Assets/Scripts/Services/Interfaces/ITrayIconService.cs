@@ -10,5 +10,5 @@ public interface ITrayIconService : IDisposable
 
     void Initialize();
 
-    void ShowBalloon(string title, string message);
+    void ShowBalloon(string title, string message, string? clickUrl = null);
 }
