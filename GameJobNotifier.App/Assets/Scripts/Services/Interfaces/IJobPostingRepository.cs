@@ -7,6 +7,7 @@ public interface IJobPostingRepository
     Task InitializeAsync(CancellationToken cancellationToken = default);
 
     Task<IReadOnlyDictionary<string, JobPostingRecord>> GetByIdsAsync(
+        string sourceUrl,
         IReadOnlyCollection<string> jobIds,
         CancellationToken cancellationToken = default);
 

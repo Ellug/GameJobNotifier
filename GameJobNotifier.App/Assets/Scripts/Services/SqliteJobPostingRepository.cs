@@ -8,6 +8,7 @@ namespace GameJobNotifier.App.Services;
 public sealed class SqliteJobPostingRepository : IJobPostingRepository
 {
     private const int MaxIdsPerBatch = 500;
+    private const string TableName = "job_postings";
 
     private readonly SemaphoreSlim _initGate = new(1, 1);
     private bool _initialized;
@@ -31,35 +32,7 @@ public sealed class SqliteJobPostingRepository : IJobPostingRepository
 
             await using var connection = CreateConnection();
             await connection.OpenAsync(cancellationToken);
-
-            await using var command = connection.CreateCommand();
-            command.CommandText = """
-                CREATE TABLE IF NOT EXISTS job_postings (
-                    job_id TEXT PRIMARY KEY,
-                    source_url TEXT NOT NULL,
-                    detail_url TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    company TEXT NOT NULL,
-                    duty_text TEXT NOT NULL,
-                    career_text TEXT NOT NULL,
-                    education_text TEXT NOT NULL,
-                    location_text TEXT NOT NULL,
-                    game_category_text TEXT NOT NULL,
-                    employment_type_text TEXT NOT NULL,
-                    deadline_text TEXT NOT NULL,
-                    modified_text TEXT NOT NULL,
-                    modified_key TEXT NOT NULL,
-                    is_hidden INTEGER NOT NULL,
-                    first_seen_utc TEXT NOT NULL,
-                    last_seen_utc TEXT NOT NULL,
-                    last_changed_utc TEXT NOT NULL
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_job_postings_source_visible
-                    ON job_postings(source_url, is_hidden);
-                """;
-
-            await command.ExecuteNonQueryAsync(cancellationToken);
+            await EnsureSchemaAsync(connection, cancellationToken);
 
             _initialized = true;
         }
@@ -70,10 +43,16 @@ public sealed class SqliteJobPostingRepository : IJobPostingRepository
     }
 
     public async Task<IReadOnlyDictionary<string, JobPostingRecord>> GetByIdsAsync(
+        string sourceUrl,
         IReadOnlyCollection<string> jobIds,
         CancellationToken cancellationToken = default)
     {
         await InitializeAsync(cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(sourceUrl))
+        {
+            throw new ArgumentException("Source scope key is required.", nameof(sourceUrl));
+        }
 
         if (jobIds.Count == 0)
         {
@@ -114,8 +93,10 @@ public sealed class SqliteJobPostingRepository : IJobPostingRepository
                     game_category_text, employment_type_text, deadline_text, modified_text, modified_key, is_hidden,
                     first_seen_utc, last_seen_utc, last_changed_utc
                 FROM job_postings
-                WHERE job_id IN ({string.Join(", ", parameterNames)})
+                WHERE source_url = @source_url
+                  AND job_id IN ({string.Join(", ", parameterNames)})
                 """;
+            command.Parameters.AddWithValue("@source_url", sourceUrl);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
@@ -187,7 +168,7 @@ public sealed class SqliteJobPostingRepository : IJobPostingRepository
                     @game_category_text, @employment_type_text, @deadline_text, @modified_text, @modified_key, @is_hidden,
                     @first_seen_utc, @last_seen_utc, @last_changed_utc
                 )
-                ON CONFLICT(job_id) DO UPDATE SET
+                ON CONFLICT(source_url, job_id) DO UPDATE SET
                     source_url = excluded.source_url,
                     detail_url = excluded.detail_url,
                     title = excluded.title,
@@ -306,5 +287,181 @@ public sealed class SqliteJobPostingRepository : IJobPostingRepository
             LastSeenUtc = DateTimeOffset.Parse(reader.GetString(16)),
             LastChangedUtc = DateTimeOffset.Parse(reader.GetString(17))
         };
+    }
+
+    private static async Task EnsureSchemaAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(connection, cancellationToken))
+        {
+            await CreateTableAsync(connection, cancellationToken);
+            await EnsureIndexesAsync(connection, cancellationToken);
+            return;
+        }
+
+        if (!await IsCompositeScopeSchemaAsync(connection, cancellationToken))
+        {
+            await MigrateLegacySchemaAsync(connection, cancellationToken);
+        }
+
+        await EnsureIndexesAsync(connection, cancellationToken);
+    }
+
+    private static async Task<bool> TableExistsAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(1)
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name = @table_name
+            """;
+        command.Parameters.AddWithValue("@table_name", TableName);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt32(result) > 0;
+    }
+
+    private static async Task<bool> IsCompositeScopeSchemaAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({TableName});";
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var sourcePkOrder = 0;
+        var jobPkOrder = 0;
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var columnName = reader.GetString(1);
+            var pkOrder = reader.GetInt32(5);
+
+            if (columnName.Equals("source_url", StringComparison.OrdinalIgnoreCase))
+            {
+                sourcePkOrder = pkOrder;
+            }
+            else if (columnName.Equals("job_id", StringComparison.OrdinalIgnoreCase))
+            {
+                jobPkOrder = pkOrder;
+            }
+        }
+
+        return sourcePkOrder > 0 && jobPkOrder > 0;
+    }
+
+    private static async Task CreateTableAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS job_postings (
+                source_url TEXT NOT NULL,
+                job_id TEXT NOT NULL,
+                detail_url TEXT NOT NULL,
+                title TEXT NOT NULL,
+                company TEXT NOT NULL,
+                duty_text TEXT NOT NULL,
+                career_text TEXT NOT NULL,
+                education_text TEXT NOT NULL,
+                location_text TEXT NOT NULL,
+                game_category_text TEXT NOT NULL,
+                employment_type_text TEXT NOT NULL,
+                deadline_text TEXT NOT NULL,
+                modified_text TEXT NOT NULL,
+                modified_key TEXT NOT NULL,
+                is_hidden INTEGER NOT NULL,
+                first_seen_utc TEXT NOT NULL,
+                last_seen_utc TEXT NOT NULL,
+                last_changed_utc TEXT NOT NULL,
+                PRIMARY KEY (source_url, job_id)
+            );
+            """;
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task EnsureIndexesAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE INDEX IF NOT EXISTS idx_job_postings_source_visible
+                ON job_postings(source_url, is_hidden);
+
+            CREATE INDEX IF NOT EXISTS idx_job_postings_job_id
+                ON job_postings(job_id);
+            """;
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task MigrateLegacySchemaAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        await using var transaction =
+            (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            await ExecuteNonQueryAsync(connection, transaction, """
+                ALTER TABLE job_postings RENAME TO job_postings_legacy;
+                """, cancellationToken);
+
+            await ExecuteNonQueryAsync(connection, transaction, """
+                CREATE TABLE job_postings (
+                    source_url TEXT NOT NULL,
+                    job_id TEXT NOT NULL,
+                    detail_url TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    company TEXT NOT NULL,
+                    duty_text TEXT NOT NULL,
+                    career_text TEXT NOT NULL,
+                    education_text TEXT NOT NULL,
+                    location_text TEXT NOT NULL,
+                    game_category_text TEXT NOT NULL,
+                    employment_type_text TEXT NOT NULL,
+                    deadline_text TEXT NOT NULL,
+                    modified_text TEXT NOT NULL,
+                    modified_key TEXT NOT NULL,
+                    is_hidden INTEGER NOT NULL,
+                    first_seen_utc TEXT NOT NULL,
+                    last_seen_utc TEXT NOT NULL,
+                    last_changed_utc TEXT NOT NULL,
+                    PRIMARY KEY (source_url, job_id)
+                );
+                """, cancellationToken);
+
+            await ExecuteNonQueryAsync(connection, transaction, """
+                INSERT INTO job_postings (
+                    source_url, job_id, detail_url, title, company, duty_text, career_text, education_text, location_text,
+                    game_category_text, employment_type_text, deadline_text, modified_text, modified_key, is_hidden,
+                    first_seen_utc, last_seen_utc, last_changed_utc
+                )
+                SELECT
+                    source_url, job_id, detail_url, title, company, duty_text, career_text, education_text, location_text,
+                    game_category_text, employment_type_text, deadline_text, modified_text, modified_key, is_hidden,
+                    first_seen_utc, last_seen_utc, last_changed_utc
+                FROM job_postings_legacy;
+                """, cancellationToken);
+
+            await ExecuteNonQueryAsync(connection, transaction, """
+                DROP TABLE job_postings_legacy;
+                """, cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    private static async Task ExecuteNonQueryAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string sql,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }

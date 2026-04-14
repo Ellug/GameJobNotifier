@@ -62,6 +62,7 @@ public sealed class JobSyncService(
 
             var now = _timeProvider.GetUtcNow();
             var existingById = await _repository.GetByIdsAsync(
+                sourceScopeKey,
                 matchedPostings.Select(posting => posting.JobId).ToArray(),
                 cancellationToken);
 
@@ -80,13 +81,6 @@ public sealed class JobSyncService(
                 var updatedRecord = CreateRecord(sourceScopeKey, posting, now, existing.FirstSeenUtc);
                 upserts.Add(updatedRecord);
 
-                var isSameScopeRecord = string.Equals(existing.SourceUrl, sourceScopeKey, StringComparison.Ordinal);
-                if (!isSameScopeRecord)
-                {
-                    // Ignore change signals when the record comes from a different filter scope.
-                    continue;
-                }
-
                 if (existing.IsHidden)
                 {
                     changes.Add(new JobChange(JobChangeType.Restored, posting));
@@ -104,7 +98,10 @@ public sealed class JobSyncService(
 
             if (missingIds.Length > 0)
             {
-                var hiddenRecords = await _repository.GetByIdsAsync(missingIds, cancellationToken);
+                var hiddenRecords = await _repository.GetByIdsAsync(
+                    sourceScopeKey,
+                    missingIds,
+                    cancellationToken);
                 await _repository.MarkHiddenAsync(sourceScopeKey, missingIds, now, cancellationToken);
 
                 foreach (var hiddenId in missingIds)

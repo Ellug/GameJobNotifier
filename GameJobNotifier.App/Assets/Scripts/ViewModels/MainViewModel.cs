@@ -30,6 +30,9 @@ public partial class MainViewModel : ObservableObject
     private bool _enableTrayBalloon = true;
 
     [ObservableProperty]
+    private bool _enableDiscordWebhook;
+
+    [ObservableProperty]
     private bool _startInBackground;
 
     [ObservableProperty]
@@ -98,6 +101,7 @@ public partial class MainViewModel : ObservableObject
                 CheckIntervalMinutes = CheckIntervalMinutes,
                 EnableToastNotification = EnableToastNotification,
                 EnableTrayBalloon = EnableTrayBalloon,
+                EnableDiscordWebhook = EnableDiscordWebhook,
                 StartInBackground = StartInBackground,
                 SelectedDutyCodes = snapshot.DutyCodes,
                 SelectedRegions = snapshot.Regions,
@@ -210,6 +214,7 @@ public partial class MainViewModel : ObservableObject
             CheckIntervalMinutes = CheckIntervalMinutes,
             EnableToastNotification = EnableToastNotification,
             EnableTrayBalloon = EnableTrayBalloon,
+            EnableDiscordWebhook = EnableDiscordWebhook,
             StartInBackground = StartInBackground,
             SelectedDutyCodes = DutyFilter.GetSelectedCodes(),
             SelectedRegions = RegionFilter.GetSelectedKeys(),
@@ -222,9 +227,10 @@ public partial class MainViewModel : ObservableObject
         {
             await _notificationService.NotifyPostingAsync(testPosting, settings, "신규 공고");
             StatusText = "알림 테스트 전송 완료";
-            AppendLog($"알림 테스트 전송 완료 (Toast={settings.EnableToastNotification}, Tray={settings.EnableTrayBalloon})");
+            AppendLog(
+                $"알림 테스트 전송 완료 (Toast={settings.EnableToastNotification}, Tray={settings.EnableTrayBalloon}, Discord={settings.EnableDiscordWebhook})");
             System.Windows.MessageBox.Show(
-                $"알림 테스트를 전송했습니다.\nToast={settings.EnableToastNotification}, Tray={settings.EnableTrayBalloon}\n\n" +
+                $"알림 테스트를 전송했습니다.\nToast={settings.EnableToastNotification}, Tray={settings.EnableTrayBalloon}, Discord={settings.EnableDiscordWebhook}\n\n" +
                 "화면에 표시되지 않으면 Windows 알림 설정(집중 지원/앱 알림 허용)을 확인해 주세요.",
                 "알림 테스트",
                 System.Windows.MessageBoxButton.OK,
@@ -307,6 +313,7 @@ public partial class MainViewModel : ObservableObject
             CheckIntervalMinutes = settings.CheckIntervalMinutes;
             EnableToastNotification = settings.EnableToastNotification;
             EnableTrayBalloon = settings.EnableTrayBalloon;
+            EnableDiscordWebhook = settings.EnableDiscordWebhook;
             StartInBackground = settings.StartInBackground;
 
             DutyFilter.ApplySelection(settings.SelectedDutyCodes);

@@ -28,6 +28,13 @@
                       IsChecked="{Binding StartInBackground}" />
         </StackPanel>
 
+        <StackPanel Orientation="Horizontal"
+                    Margin="0,0,0,10">
+            <CheckBox Content="디스코드 웹훅 전송(신규 공고)"
+                      VerticalAlignment="Center"
+                      IsChecked="{Binding EnableDiscordWebhook}" />
+        </StackPanel>
+
         <!-- 버튼 행 -->
         <StackPanel Orientation="Horizontal">
             <Button Width="110"

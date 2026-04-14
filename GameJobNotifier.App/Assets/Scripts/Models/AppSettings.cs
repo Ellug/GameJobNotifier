@@ -12,6 +12,8 @@ public sealed record AppSettings
 
     public bool EnableTrayBalloon { get; init; } = true;
 
+    public bool EnableDiscordWebhook { get; init; }
+
     public bool StartInBackground { get; init; }
 
     public IReadOnlyList<int> SelectedDutyCodes { get; init; } = DutyCatalog.DefaultSelectedCodes;
