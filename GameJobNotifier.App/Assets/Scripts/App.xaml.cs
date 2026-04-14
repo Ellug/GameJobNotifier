@@ -5,17 +5,29 @@ using GameJobNotifier.App.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Threading;
 
 namespace GameJobNotifier.App;
 
 public partial class App : System.Windows.Application
 {
+    private const string SingleInstanceMutexName = @"Local\GameJobNotifier.App.Singleton";
+
     private IHost? _host;
+    private Mutex? _singleInstanceMutex;
+    private bool _hasSingleInstanceLock;
 
     protected override async void OnStartup(System.Windows.StartupEventArgs e)
     {
         base.OnStartup(e);
         ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
+
+        if (!TryAcquireSingleInstanceLock())
+        {
+            Shutdown();
+            return;
+        }
+
         WindowsAppIdentity.EnsureExplicitAppUserModelId();
 
         AppPaths.EnsureCreated();
@@ -65,7 +77,55 @@ public partial class App : System.Windows.Application
             _host = null;
         }
 
+        ReleaseSingleInstanceLock();
         base.OnExit(e);
+    }
+
+    private bool TryAcquireSingleInstanceLock()
+    {
+        try
+        {
+            var mutex = new Mutex(initiallyOwned: true, SingleInstanceMutexName, out var createdNew);
+            if (!createdNew)
+            {
+                mutex.Dispose();
+                return false;
+            }
+
+            _singleInstanceMutex = mutex;
+            _hasSingleInstanceLock = true;
+            return true;
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
+    private void ReleaseSingleInstanceLock()
+    {
+        if (_singleInstanceMutex is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_hasSingleInstanceLock)
+            {
+                _singleInstanceMutex.ReleaseMutex();
+            }
+        }
+        catch
+        {
+            // Ignore mutex release exceptions on shutdown.
+        }
+        finally
+        {
+            _singleInstanceMutex.Dispose();
+            _singleInstanceMutex = null;
+            _hasSingleInstanceLock = false;
+        }
     }
 
     private static IHostBuilder CreateHostBuilder()
