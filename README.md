@@ -120,7 +120,7 @@ DI 구성: [App.xaml.cs](./GameJobNotifier.App/Assets/Scripts/App.xaml.cs)
 - 사이트 HTML 구조 변화 대응 강화 필요: selector fallback, parser diagnostics 개선 여지
 - 알림 전송 경로 PowerShell 의존성: WinRT 직접 호출 래퍼로 전환 시 안정성 향상 가능
 
-## 포트폴리오 관점에서 강조할 점
+## . . .
 - 실제 서비스형 문제(변경 감지, 노이즈 억제, 백그라운드 운영)를 로컬 앱으로 해결
 - 단순 CRUD가 아니라, **수집-판단-이벤트-통지** 파이프라인을 끝까지 구현
 - UI 기능보다 데이터 신뢰성과 운영성(상태 관리, 복원 감지, 부팅 연동)에 비중을 둔 설계
