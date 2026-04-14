@@ -16,6 +16,7 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
         ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
+        WindowsAppIdentity.EnsureExplicitAppUserModelId();
 
         AppPaths.EnsureCreated();
         _host = CreateHostBuilder().Build();

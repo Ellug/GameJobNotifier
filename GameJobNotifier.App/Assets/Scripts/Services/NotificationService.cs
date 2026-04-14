@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Security;
 using System.Text;
 using System.Text.Json;
+using GameJobNotifier.App.Infrastructure;
 using GameJobNotifier.App.Models;
 using GameJobNotifier.App.Services.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -94,7 +95,7 @@ public sealed class NotificationService(
                 $doc = New-Object Windows.Data.Xml.Dom.XmlDocument
                 $doc.LoadXml($xml)
                 $toast = [Windows.UI.Notifications.ToastNotification]::new($doc)
-                [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('GameJobNotifier').Show($toast)
+                [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{{WindowsAppIdentity.AppUserModelId}}').Show($toast)
                 """;
 
             var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
